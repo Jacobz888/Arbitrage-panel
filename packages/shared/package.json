@@ -1,0 +1,42 @@
+{
+  "name": "@shared/typings",
+  "version": "1.0.0",
+  "description": "Shared typings, DTOs, and utilities",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./enums": {
+      "import": "./dist/enums.js",
+      "types": "./dist/enums.d.ts"
+    },
+    "./dtos": {
+      "import": "./dist/dtos.js",
+      "types": "./dist/dtos.d.ts"
+    },
+    "./decimal": {
+      "import": "./dist/decimal.js",
+      "types": "./dist/decimal.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint src",
+    "test": "echo 'No tests yet'",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "decimal.js": "^10.4.3"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^6.13.2",
+    "@typescript-eslint/parser": "^6.13.2",
+    "decimal.js": "^10.4.3",
+    "eslint": "^8.55.0",
+    "typescript": "^5.3.3"
+  }
+}
