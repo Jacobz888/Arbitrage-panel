@@ -3,3 +3,4 @@ packages:
   - 'frontend'
   - 'worker'
   - 'packages/*'
+  - 'e2e'

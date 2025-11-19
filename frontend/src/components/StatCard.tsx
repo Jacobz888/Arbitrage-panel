@@ -25,14 +25,14 @@ export const StatCard: React.FC<StatCardProps> = ({
   };
 
   return (
-    <div className={`card p-6 border-2 ${colorClasses[color]}`}>
+    <div className={`card p-6 border-2 ${colorClasses[color]}`} data-testid="stat-card">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
             {title}
           </p>
           {loading ? (
-            <div className="skeleton h-8 w-24 rounded" />
+            <div className="skeleton h-8 w-24 rounded" data-testid="skeleton" />
           ) : (
             <>
               <p className="text-3xl font-bold text-white">{value}</p>

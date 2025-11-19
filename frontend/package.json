@@ -9,8 +9,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint src",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:watch": "vitest watch",
     "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
@@ -29,6 +32,7 @@
     "@typescript-eslint/eslint-plugin": "^6.13.2",
     "@typescript-eslint/parser": "^6.13.2",
     "@vitejs/plugin-react": "^4.2.1",
+    "@vitest/coverage-v8": "^1.2.2",
     "@vitest/ui": "^1.0.4",
     "autoprefixer": "^10.4.16",
     "eslint": "^8.55.0",
