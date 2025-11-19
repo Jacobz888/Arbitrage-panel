@@ -12,7 +12,12 @@
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
     "dev": "pnpm -r --parallel dev",
-    "clean": "pnpm -r clean"
+    "clean": "pnpm -r clean",
+    "backend:db:generate": "pnpm --filter backend db:generate",
+    "backend:db:migrate": "pnpm --filter backend db:migrate",
+    "backend:db:reset": "pnpm --filter backend db:reset",
+    "backend:db:seed": "pnpm --filter backend db:seed",
+    "backend:db:studio": "pnpm --filter backend db:studio"
   },
   "pnpm": {
     "overrides": {},
