@@ -5,7 +5,6 @@ import {
   ServiceDependencies 
 } from '../types/index.js';
 import { serializeDecimal } from '../utils/decimal.js';
-import { recordDatabaseMetric } from '../middleware/metrics.js';
 
 export interface OpportunityStats {
   totalOpportunities: number;
@@ -109,7 +108,9 @@ export class StatsService {
         })
       ]);
 
-      recordDatabaseMetric('aggregate', 'opportunity', (Date.now() - startTime) / 1000);
+      if (this.metrics && this.metrics.record) {
+        this.metrics.record('aggregate', 'opportunity', (Date.now() - startTime) / 1000);
+      }
 
       return {
         totalOpportunities: totalResult,
@@ -163,7 +164,9 @@ export class StatsService {
         })
       ]);
 
-      recordDatabaseMetric('aggregate', 'scanStats', (Date.now() - startTime) / 1000);
+      if (this.metrics && this.metrics.record) {
+        this.metrics.record('aggregate', 'scanStats', (Date.now() - startTime) / 1000);
+      }
 
       const totalScans = totalScansResult._sum.totalScans || 0;
       const successfulScans = successfulScansResult._sum.successfulScans || 0;
@@ -218,7 +221,9 @@ export class StatsService {
         take: 100
       });
 
-      recordDatabaseMetric('findMany', 'scanStats', (Date.now() - startTime) / 1000);
+      if (this.metrics && this.metrics.record) {
+        this.metrics.record('findMany', 'scanStats', (Date.now() - startTime) / 1000);
+      }
 
       return scanStats.map(stat => this.serializeScanStats(stat));
     } catch (error) {
@@ -248,7 +253,9 @@ export class StatsService {
         }
       });
 
-      recordDatabaseMetric('create', 'scanStats', (Date.now() - startTime) / 1000);
+      if (this.metrics && this.metrics.record) {
+        this.metrics.record('create', 'scanStats', (Date.now() - startTime) / 1000);
+      }
 
       this.logger.info('Scan stats recorded', { 
         id: scanStats.id, 

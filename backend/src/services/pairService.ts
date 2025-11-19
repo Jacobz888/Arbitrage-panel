@@ -81,7 +81,9 @@ export class PairService {
         }
       });
 
-      recordDatabaseMetric('findUnique', 'pair', (Date.now() - startTime) / 1000);
+      if (this.metrics && this.metrics.record) {
+        this.metrics.record('findUnique', 'pair', (Date.now() - startTime) / 1000);
+      }
 
       if (!pair) {
         return null;
@@ -110,7 +112,9 @@ export class PairService {
         }
       });
 
-      recordDatabaseMetric('findUnique', 'pair', (Date.now() - startTime) / 1000);
+      if (this.metrics && this.metrics.record) {
+        this.metrics.record('findUnique', 'pair', (Date.now() - startTime) / 1000);
+      }
 
       if (!pair) {
         return null;

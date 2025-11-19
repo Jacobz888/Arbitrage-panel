@@ -5,7 +5,6 @@ import {
   ServiceDependencies 
 } from '../types/index.js';
 import { serializeDecimal, deserializeDecimal } from '../utils/decimal.js';
-import { recordDatabaseMetric } from '../middleware/metrics.js';
 
 export interface SettingInput {
   key: string;
@@ -39,7 +38,9 @@ export class SettingsService {
         orderBy: { key: 'asc' }
       });
 
-      recordDatabaseMetric('findMany', 'settings', (Date.now() - startTime) / 1000);
+      if (this.metrics && this.metrics.record) {
+        this.metrics.record('findMany', 'settings', (Date.now() - startTime) / 1000);
+      }
 
       return settings.map(setting => this.serializeSetting(setting));
     } catch (error) {
@@ -56,7 +57,9 @@ export class SettingsService {
         where: { key }
       });
 
-      recordDatabaseMetric('findUnique', 'settings', (Date.now() - startTime) / 1000);
+      if (this.metrics && this.metrics.record) {
+        this.metrics.record('findUnique', 'settings', (Date.now() - startTime) / 1000);
+      }
 
       if (!setting) {
         return null;
@@ -94,7 +97,9 @@ export class SettingsService {
         }
       });
 
-      recordDatabaseMetric('create', 'settings', (Date.now() - startTime) / 1000);
+      if (this.metrics && this.metrics.record) {
+        this.metrics.record('create', 'settings', (Date.now() - startTime) / 1000);
+      }
 
       this.logger.info('Setting created', { 
         key: data.key,
@@ -131,7 +136,9 @@ export class SettingsService {
         data: updateData
       });
 
-      recordDatabaseMetric('update', 'settings', (Date.now() - startTime) / 1000);
+      if (this.metrics && this.metrics.record) {
+        this.metrics.record('update', 'settings', (Date.now() - startTime) / 1000);
+      }
 
       this.logger.info('Setting updated', { 
         key,
@@ -153,7 +160,9 @@ export class SettingsService {
         where: { key }
       });
 
-      recordDatabaseMetric('delete', 'settings', (Date.now() - startTime) / 1000);
+      if (this.metrics && this.metrics.record) {
+        this.metrics.record('delete', 'settings', (Date.now() - startTime) / 1000);
+      }
 
       this.logger.info('Setting deleted', { key });
     } catch (error) {

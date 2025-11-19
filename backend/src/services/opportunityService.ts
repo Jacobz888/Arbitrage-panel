@@ -108,7 +108,9 @@ export class OpportunityService {
         }
       });
 
-      recordDatabaseMetric('findUnique', 'opportunity', (Date.now() - startTime) / 1000);
+      if (this.metrics && this.metrics.record) {
+        this.metrics.record('findUnique', 'opportunity', (Date.now() - startTime) / 1000);
+      }
 
       if (!opportunity) {
         return null;
