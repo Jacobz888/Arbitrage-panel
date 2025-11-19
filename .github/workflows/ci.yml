@@ -1,0 +1,536 @@
+name: CI Pipeline
+
+on:
+  push:
+  pull_request:
+
+env:
+  NODE_VERSION: '20.10.0'
+  PNPM_VERSION: '8.15.0'
+  SENTRY_RELEASE: ${{ github.sha }}
+  SENTRY_ENVIRONMENT: ci
+  SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+  SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+  SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Determine pnpm store path
+        id: pnpm-cache
+        run: |
+          STORE_PATH=$(pnpm store path --silent)
+          echo "store-path=$STORE_PATH" >> $GITHUB_OUTPUT
+          echo "PNPM_STORE_PATH=$STORE_PATH" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.pnpm-cache.outputs.store-path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run ESLint
+        run: pnpm lint
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    outputs:
+      unit-report-artifact: ${{ steps.upload-unit-report.outputs.artifact-id }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Determine pnpm store path
+        id: pnpm-cache
+        run: |
+          STORE_PATH=$(pnpm store path --silent)
+          echo "store-path=$STORE_PATH" >> $GITHUB_OUTPUT
+          echo "PNPM_STORE_PATH=$STORE_PATH" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.pnpm-cache.outputs.store-path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: pnpm backend:db:generate
+
+      - name: Run unit tests
+        id: run-unit-tests
+        run: |
+          mkdir -p artifacts/unit
+          set -o pipefail
+          pnpm test:unit | tee artifacts/unit/unit-tests.log
+
+      - name: Upload unit test report
+        id: upload-unit-report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-tests-report
+          path: artifacts/unit/unit-tests.log
+          retention-days: 7
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    outputs:
+      integration-report-artifact: ${{ steps.upload-integration-report.outputs.artifact-id }}
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Determine pnpm store path
+        id: pnpm-cache
+        run: |
+          STORE_PATH=$(pnpm store path --silent)
+          echo "store-path=$STORE_PATH" >> $GITHUB_OUTPUT
+          echo "PNPM_STORE_PATH=$STORE_PATH" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.pnpm-cache.outputs.store-path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: pnpm backend:db:generate
+
+      - name: Run integration tests
+        id: run-integration-tests
+        env:
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+        run: |
+          mkdir -p artifacts/integration
+          set -o pipefail
+          pnpm test:integration | tee artifacts/integration/integration-tests.log
+
+      - name: Upload integration test report
+        id: upload-integration-report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-tests-report
+          path: artifacts/integration/integration-tests.log
+          retention-days: 7
+
+  coverage-report:
+    name: Coverage Report
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests]
+    outputs:
+      coverage-artifact: ${{ steps.upload-coverage.outputs.artifact-id }}
+      coverage-summary-file: ${{ steps.coverage-summary.outputs.summary-file }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Determine pnpm store path
+        id: pnpm-cache
+        run: |
+          STORE_PATH=$(pnpm store path --silent)
+          echo "store-path=$STORE_PATH" >> $GITHUB_OUTPUT
+          echo "PNPM_STORE_PATH=$STORE_PATH" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.pnpm-cache.outputs.store-path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: pnpm backend:db:generate
+
+      - name: Run coverage suite
+        run: pnpm test:coverage
+
+      - name: Collect coverage outputs
+        run: |
+          mkdir -p artifacts/coverage
+          for dir in backend frontend worker packages/shared; do
+            if [ -d "$dir/coverage" ]; then
+              mkdir -p "artifacts/coverage/$dir"
+              cp -R "$dir/coverage" "artifacts/coverage/$dir/"
+            fi
+          done
+
+      - name: Generate coverage summary
+        id: coverage-summary
+        run: |
+          SUMMARY_FILE=artifacts/coverage/coverage-summary.txt
+          mkdir -p artifacts/coverage
+          echo "Coverage summary files:" > "$SUMMARY_FILE"
+          FOUND=0
+          for file in backend/coverage/coverage-summary.json frontend/coverage/coverage-summary.json worker/coverage/coverage-summary.json packages/shared/coverage/coverage-summary.json; do
+            if [ -f "$file" ]; then
+              FOUND=1
+              echo "$file" >> "$SUMMARY_FILE"
+            fi
+          done
+          if [ "$FOUND" -eq 0 ]; then
+            echo "No coverage-summary.json files were produced." >> "$SUMMARY_FILE"
+          fi
+          echo "summary-file=$SUMMARY_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Upload coverage artifact
+        id: upload-coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-bundle
+          path: artifacts/coverage
+          retention-days: 7
+
+  build-services:
+    name: Build (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests]
+    strategy:
+      matrix:
+        service: [backend, frontend, worker]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Determine pnpm store path
+        id: pnpm-cache
+        run: |
+          STORE_PATH=$(pnpm store path --silent)
+          echo "store-path=$STORE_PATH" >> $GITHUB_OUTPUT
+          echo "PNPM_STORE_PATH=$STORE_PATH" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.pnpm-cache.outputs.store-path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build ${{ matrix.service }}
+        run: pnpm --filter ${{ matrix.service }} build
+
+  docker-images:
+    name: Docker Image (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    needs: build-services
+    strategy:
+      matrix:
+        include:
+          - name: backend
+            file: backend/Dockerfile
+            tag: arbitrage-backend
+          - name: frontend
+            file: frontend/Dockerfile
+            tag: arbitrage-frontend
+          - name: worker
+            file: worker/Dockerfile
+            tag: arbitrage-worker
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          push: false
+          load: true
+          tags: ${{ matrix.tag }}:${{ github.sha }}
+          build-args: |
+            SENTRY_RELEASE=${{ env.SENTRY_RELEASE }}
+            SENTRY_ENVIRONMENT=${{ env.SENTRY_ENVIRONMENT }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Inspect built image
+        run: docker image inspect ${{ matrix.tag }}:${{ github.sha }}
+
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: build-services
+    outputs:
+      playwright-report-artifact: ${{ steps.upload-playwright-report.outputs.artifact-id }}
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: arbitrage_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Determine pnpm store path
+        id: pnpm-cache
+        run: |
+          STORE_PATH=$(pnpm store path --silent)
+          echo "store-path=$STORE_PATH" >> $GITHUB_OUTPUT
+          echo "PNPM_STORE_PATH=$STORE_PATH" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.pnpm-cache.outputs.store-path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/arbitrage_test
+        run: pnpm backend:db:migrate
+
+      - name: Seed database
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/arbitrage_test
+        run: pnpm backend:db:seed
+
+      - name: Install Playwright browsers
+        run: cd e2e && pnpm exec playwright install --with-deps chromium
+
+      - name: Start backend service
+        run: |
+          cd backend
+          pnpm dev > ../backend.log 2>&1 &
+          echo $! > ../backend.pid
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/arbitrage_test
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+          PORT: 4000
+
+      - name: Start worker service
+        run: |
+          cd worker
+          pnpm dev > ../worker.log 2>&1 &
+          echo $! > ../worker.pid
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/arbitrage_test
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+
+      - name: Start frontend service
+        run: |
+          cd frontend
+          pnpm dev -- --host 127.0.0.1 --port 3000 > ../frontend.log 2>&1 &
+          echo $! > ../frontend.pid
+        env:
+          VITE_API_BASE_URL: http://localhost:4000/api
+
+      - name: Wait for backend to be ready
+        run: |
+          timeout 90 bash -c 'until curl -sf http://localhost:4000/health; do sleep 3; done' || (cat backend.log && exit 1)
+
+      - name: Wait for frontend to be ready
+        run: |
+          timeout 90 bash -c 'until curl -sf http://localhost:3000; do sleep 3; done' || (cat frontend.log && exit 1)
+
+      - name: Run E2E tests (Playwright)
+        env:
+          BASE_URL: http://localhost:3000
+        run: |
+          set -o pipefail
+          xvfb-run -a pnpm test:e2e | tee e2e/e2e-tests.log
+
+      - name: Upload Playwright report
+        id: upload-playwright-report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/e2e-tests.log
+          retention-days: 7
+
+      - name: Upload service logs on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: service-logs
+          path: |
+            backend.log
+            worker.log
+            frontend.log
+          retention-days: 7
+
+      - name: Stop services
+        if: always()
+        run: |
+          [ -f backend.pid ] && kill $(cat backend.pid) || true
+          [ -f worker.pid ] && kill $(cat worker.pid) || true
+          [ -f frontend.pid ] && kill $(cat frontend.pid) || true
+
+  ci-summary:
+    name: Workflow Summary
+    runs-on: ubuntu-latest
+    needs:
+      - lint
+      - unit-tests
+      - integration-tests
+      - coverage-report
+      - build-services
+      - docker-images
+      - e2e-tests
+    if: always()
+    steps:
+      - name: Publish summary
+        run: |
+          echo "## CI Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Lint: ${{ needs.lint.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Unit Tests: ${{ needs.unit-tests.result }} (artifact: ${{ needs.unit-tests.outputs.unit-report-artifact }})" >> $GITHUB_STEP_SUMMARY
+          echo "- Integration Tests: ${{ needs.integration-tests.result }} (artifact: ${{ needs.integration-tests.outputs.integration-report-artifact }})" >> $GITHUB_STEP_SUMMARY
+          echo "- Coverage Report: ${{ needs.coverage-report.result }} (artifact: ${{ needs.coverage-report.outputs.coverage-artifact }})" >> $GITHUB_STEP_SUMMARY
+          echo "- Build Matrix: ${{ needs.build-services.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Docker Images: ${{ needs.docker-images.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- E2E Tests: ${{ needs.e2e-tests.result }} (artifact: ${{ needs.e2e-tests.outputs.playwright-report-artifact }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if any dependency failed
+        if: |
+          needs.lint.result == 'failure' ||
+          needs.unit-tests.result == 'failure' ||
+          needs.integration-tests.result == 'failure' ||
+          needs.coverage-report.result == 'failure' ||
+          needs.build-services.result == 'failure' ||
+          needs.docker-images.result == 'failure' ||
+          needs.e2e-tests.result == 'failure'
+        run: exit 1
