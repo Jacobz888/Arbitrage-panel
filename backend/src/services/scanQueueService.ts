@@ -1,360 +1,193 @@
-import { Decimal } from '@prisma/client';
-import { PrismaClient } from '@prisma/client';
-import { 
-  ScanJobRequest, 
+import { Queue, QueueScheduler, Job, JobsOptions } from 'bullmq';
+import IORedis from 'ioredis';
+import {
+  MANUAL_SCAN_QUEUE,
+  DEAD_LETTER_QUEUE,
+  SCAN_JOB_NAME,
+  ScanJobRequest,
+  ScanJobPayload,
   ScanJobResponse,
-  ServiceDependencies 
-} from '../types/index.js';
-import { updateScanQueueDepth, incrementScanQueue, decrementScanQueue } from '../middleware/metrics.js';
+  QueueDepthSnapshot
+} from '@shared/typings/queues';
+import { ServiceDependencies } from '../types/index.js';
+import { updateScanQueueDepth } from '../middleware/metrics.js';
 
-interface QueuedJob {
-  id: string;
-  pairId?: number;
-  force: boolean;
-  status: 'queued' | 'processing' | 'completed' | 'failed';
-  createdAt: Date;
-  startedAt?: Date;
-  completedAt?: Date;
-  result?: any;
-  error?: string;
-}
+const DEFAULT_JOB_OPTIONS: JobsOptions = {
+  removeOnComplete: 100,
+  removeOnFail: 200,
+  attempts: 3,
+  backoff: {
+    type: 'exponential',
+    delay: 3000
+  }
+};
+
+const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 
 export class ScanQueueService {
-  private prisma: PrismaClient;
   private logger: any;
-  private metrics: any;
-  private gateAdapter?: any;
-  private kyberAdapter?: any;
-  
-  private queue: Map<string, QueuedJob> = new Map();
-  private processing: Set<string> = new Set();
-  private jobIdCounter: number = 0;
+  private redis: IORedis;
+  private manualQueue: Queue<ScanJobPayload>;
+  private deadLetterQueue: Queue<ScanJobPayload>;
+  private scheduler?: QueueScheduler;
 
   constructor(deps: ServiceDependencies) {
-    this.prisma = deps.prisma;
     this.logger = deps.logger;
-    this.metrics = deps.metrics;
-    this.gateAdapter = deps.gateAdapter;
-    this.kyberAdapter = deps.kyberAdapter;
+    this.redis = new IORedis(REDIS_URL, {
+      maxRetriesPerRequest: null,
+      enableReadyCheck: false
+    });
+
+    this.manualQueue = new Queue(MANUAL_SCAN_QUEUE, {
+      connection: this.redis
+    });
+
+    this.deadLetterQueue = new Queue(DEAD_LETTER_QUEUE, {
+      connection: this.redis
+    });
+  }
+
+  async initialize(): Promise<void> {
+    this.scheduler = new QueueScheduler(MANUAL_SCAN_QUEUE, {
+      connection: this.redis
+    });
+    await this.scheduler.waitUntilReady();
+    await this.refreshQueueDepth();
+    this.logger.info('Scan queue service connected', { redis: REDIS_URL });
   }
 
   async enqueueScanJob(request: ScanJobRequest): Promise<ScanJobResponse> {
-    try {
-      const jobId = this.generateJobId();
-      
-      const job: QueuedJob = {
-        id: jobId,
-        pairId: request.pairId,
-        force: request.force || false,
-        status: 'queued',
-        createdAt: new Date()
-      };
+    const payload: ScanJobPayload = {
+      ...request,
+      trigger: 'manual',
+      requestedAt: new Date().toISOString()
+    };
 
-      this.queue.set(jobId, job);
-      incrementScanQueue();
-      
-      this.logger.info('Scan job enqueued', { 
-        jobId, 
-        pairId: request.pairId, 
-        force: request.force 
-      });
+    const job = await this.manualQueue.add(SCAN_JOB_NAME, payload, DEFAULT_JOB_OPTIONS);
+    await this.refreshQueueDepth();
 
-      // Process job asynchronously
-      this.processJob(jobId).catch(error => {
-        this.logger.error('Job processing failed', { jobId, error });
-      });
+    this.logger.info('Manual scan job enqueued', {
+      jobId: job.id,
+      pairId: request.pairId,
+      force: request.force
+    });
 
-      return {
-        jobId,
-        status: 'queued',
-        estimatedDuration: 30, // 30 seconds estimate
-        queuedAt: job.createdAt.toISOString()
-      };
-    } catch (error) {
-      this.logger.error('Failed to enqueue scan job', { error, request });
-      throw error;
-    }
+    return {
+      jobId: job.id!.toString(),
+      status: 'queued',
+      queuedAt: new Date(job.timestamp ?? Date.now()).toISOString(),
+      estimatedDuration: 30
+    };
   }
 
   async getJobStatus(jobId: string): Promise<ScanJobResponse | null> {
-    const job = this.queue.get(jobId);
-    
+    const job = await this.manualQueue.getJob(jobId);
     if (!job) {
       return null;
     }
 
+    const state = await job.getState();
     return {
-      jobId: job.id,
-      status: job.status,
-      queuedAt: job.createdAt.toISOString()
+      jobId: job.id!.toString(),
+      status: this.mapState(state),
+      queuedAt: new Date(job.timestamp ?? Date.now()).toISOString(),
+      completedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : undefined
     };
   }
 
-  async getAllJobs(): Promise<QueuedJob[]> {
-    return Array.from(this.queue.values()).sort((a, b) => 
-      b.createdAt.getTime() - a.createdAt.getTime()
+  async getAllJobs(limit: number = 50): Promise<Array<Record<string, unknown>>> {
+    const jobs = await this.manualQueue.getJobs(
+      ['waiting', 'delayed', 'active', 'completed', 'failed'],
+      0,
+      limit - 1,
+      true
     );
+
+    return jobs.map(job => this.serializeJob(job));
   }
 
   async cancelJob(jobId: string): Promise<boolean> {
-    const job = this.queue.get(jobId);
-    
+    const job = await this.manualQueue.getJob(jobId);
     if (!job) {
       return false;
     }
 
-    if (job.status === 'queued') {
-      job.status = 'failed';
-      job.error = 'Job cancelled by user';
-      job.completedAt = new Date();
-      
-      decrementScanQueue();
-      
-      this.logger.info('Scan job cancelled', { jobId });
+    const state = await job.getState();
+    if (state === 'waiting' || state === 'delayed') {
+      await job.remove();
+      await this.refreshQueueDepth();
+      this.logger.info('Manual scan job cancelled', { jobId });
       return true;
     }
 
     return false;
   }
 
-  private async processJob(jobId: string): Promise<void> {
-    const job = this.queue.get(jobId);
-    
-    if (!job) {
-      return;
-    }
+  async getQueueStats(): Promise<{ queued: number; processing: number; completed: number; failed: number; total: number; depth: QueueDepthSnapshot; }> {
+    const counts = await this.manualQueue.getJobCounts('waiting', 'delayed', 'active', 'completed', 'failed');
+    const depth: QueueDepthSnapshot = {
+      waiting: counts.waiting,
+      active: counts.active,
+      delayed: counts.delayed,
+      failed: counts.failed,
+      completed: counts.completed
+    };
 
-    try {
-      // Update job status
-      job.status = 'processing';
-      job.startedAt = new Date();
-      this.processing.add(jobId);
-      
-      this.logger.info('Processing scan job', { jobId });
-
-      // Perform the actual scan
-      const result = await this.performScan(job);
-      
-      // Update job with result
-      job.status = 'completed';
-      job.completedAt = new Date();
-      job.result = result;
-      
-      this.logger.info('Scan job completed', { 
-        jobId, 
-        duration: job.completedAt.getTime() - job.startedAt!.getTime(),
-        opportunitiesFound: result.opportunitiesFound
-      });
-
-    } catch (error) {
-      job.status = 'failed';
-      job.completedAt = new Date();
-      job.error = error instanceof Error ? error.message : 'Unknown error';
-      
-      this.logger.error('Scan job failed', { jobId, error });
-    } finally {
-      this.processing.delete(jobId);
-      decrementScanQueue();
-    }
-  }
-
-  private async performScan(job: QueuedJob): Promise<{
-    opportunitiesFound: number;
-    pairsScanned: number;
-    errors: string[];
-  }> {
-    const startTime = Date.now();
-    const opportunitiesFound = 0;
-    const pairsScanned = 0;
-    const errors: string[] = [];
-
-    try {
-      // Get pairs to scan
-      const pairs = await this.getPairsToScan(job.pairId);
-      
-      for (const pair of pairs) {
-        try {
-          await this.scanPair(pair);
-          pairsScanned++;
-        } catch (error) {
-          const errorMsg = `Failed to scan pair ${pair.symbol}: ${error instanceof Error ? error.message : 'Unknown error'}`;
-          errors.push(errorMsg);
-          this.logger.warn('Pair scan failed', { pairId: pair.id, symbol: pair.symbol, error });
-        }
-      }
-
-      // Record scan statistics
-      await this.recordScanStats(job.pairId, {
-        totalScans: 1,
-        successfulScans: errors.length === 0 ? 1 : 0,
-        failedScans: errors.length > 0 ? 1 : 0,
-        opportunitiesFound,
-        averageScanTime: new Decimal(((Date.now() - startTime) / 1000).toFixed(2))
-      });
-
-      return {
-        opportunitiesFound,
-        pairsScanned,
-        errors
-      };
-
-    } catch (error) {
-      this.logger.error('Scan execution failed', { jobId: job.id, error });
-      throw error;
-    }
-  }
-
-  private async getPairsToScan(pairId?: number) {
-    if (pairId) {
-      const pair = await this.prisma.pair.findUnique({
-        where: { id: pairId, isActive: true }
-      });
-      
-      if (!pair) {
-        throw new Error(`Pair with ID ${pairId} not found or inactive`);
-      }
-      
-      return [pair];
-    }
-
-    return await this.prisma.pair.findMany({
-      where: { isActive: true },
-      take: 10, // Limit to 10 pairs per scan
-      orderBy: { updatedAt: 'asc' } // Scan oldest first
-    });
-  }
-
-  private async scanPair(pair: any): Promise<void> {
-    if (!this.gateAdapter || !this.kyberAdapter) {
-      throw new Error('Market adapters not available');
-    }
-
-    try {
-      // Get prices from both exchanges
-      const [gatePrice, kyberPrice, gateVolume, kyberVolume] = await Promise.all([
-        this.gateAdapter.getPrice(pair.symbol),
-        this.kyberAdapter.getPrice(pair.symbol),
-        this.gateAdapter.getVolume(pair.symbol),
-        this.kyberAdapter.getVolume(pair.symbol)
-      ]);
-
-      // Check for arbitrage opportunities
-      const spread1 = this.calculateSpread(gatePrice, kyberPrice); // Buy Gate, Sell Kyber
-      const spread2 = this.calculateSpread(kyberPrice, gatePrice); // Buy Kyber, Sell Gate
-
-      const minSpread = new Decimal('1.5'); // 1.5% minimum spread
-
-      if (spread1.gte(minSpread)) {
-        await this.createOpportunity(pair, 'Gate.io', 'KyberSwap', gatePrice, kyberPrice, gateVolume);
-      }
-
-      if (spread2.gte(minSpread)) {
-        await this.createOpportunity(pair, 'KyberSwap', 'Gate.io', kyberPrice, gatePrice, kyberVolume);
-      }
-
-    } catch (error) {
-      this.logger.error('Pair scan execution failed', { 
-        pairId: pair.id, 
-        symbol: pair.symbol, 
-        error 
-      });
-      throw error;
-    }
-  }
-
-  private calculateSpread(buyPrice: Decimal, sellPrice: Decimal): Decimal {
-    if (buyPrice.equals(0)) return new Decimal(0);
-    return sellPrice.minus(buyPrice).div(buyPrice).times(100);
-  }
-
-  private async createOpportunity(
-    pair: any,
-    buyExchange: string,
-    sellExchange: string,
-    buyPrice: Decimal,
-    sellPrice: Decimal,
-    volume: Decimal
-  ): Promise<void> {
-    const spread = this.calculateSpread(buyPrice, sellPrice);
-    const profitEstimate = spread.div(100).times(volume).minus(volume.times('0.002')); // 0.2% total fees
-
-    await this.prisma.opportunity.create({
-      data: {
-        pairId: pair.id,
-        buyExchange,
-        sellExchange,
-        buyPrice,
-        sellPrice,
-        spread,
-        profitEstimate,
-        volume: volume.minus(volume.times('0.1')), // Use 90% of available volume
-        status: 'PENDING',
-        expiresAt: new Date(Date.now() + 5 * 60 * 1000) // 5 minutes
-      }
-    });
-
-    this.logger.info('Opportunity created', {
-      pairId: pair.id,
-      symbol: pair.symbol,
-      buyExchange,
-      sellExchange,
-      spread: spread.toString(),
-      profitEstimate: profitEstimate.toString()
-    });
-  }
-
-  private async recordScanStats(pairId: number | undefined, stats: {
-    totalScans: number;
-    successfulScans: number;
-    failedScans: number;
-    opportunitiesFound: number;
-    averageScanTime: Decimal;
-  }): Promise<void> {
-    await this.prisma.scanStats.create({
-      data: {
-        pairId,
-        ...stats,
-        lastScanAt: new Date()
-      }
-    });
-  }
-
-  private generateJobId(): string {
-    return `scan_${Date.now()}_${++this.jobIdCounter}`;
-  }
-
-  // Cleanup old jobs (call this periodically)
-  cleanupOldJobs(maxAge: number = 24 * 60 * 60 * 1000): void {
-    const cutoff = new Date(Date.now() - maxAge);
-    let cleanedCount = 0;
-
-    for (const [jobId, job] of this.queue.entries()) {
-      if (job.createdAt < cutoff && (job.status === 'completed' || job.status === 'failed')) {
-        this.queue.delete(jobId);
-        cleanedCount++;
-      }
-    }
-
-    if (cleanedCount > 0) {
-      this.logger.info('Cleaned up old jobs', { count: cleanedCount });
-    }
-  }
-
-  getQueueStats(): {
-    queued: number;
-    processing: number;
-    completed: number;
-    failed: number;
-    total: number;
-  } {
-    const jobs = Array.from(this.queue.values());
-    
     return {
-      queued: jobs.filter(j => j.status === 'queued').length,
-      processing: jobs.filter(j => j.status === 'processing').length,
-      completed: jobs.filter(j => j.status === 'completed').length,
-      failed: jobs.filter(j => j.status === 'failed').length,
-      total: jobs.length
+      queued: counts.waiting + counts.delayed,
+      processing: counts.active,
+      completed: counts.completed,
+      failed: counts.failed,
+      total: counts.waiting + counts.delayed + counts.active + counts.completed + counts.failed,
+      depth
+    };
+  }
+
+  async cleanupOldJobs(retentionMs: number = 24 * 60 * 60 * 1000): Promise<void> {
+    await Promise.all([
+      this.manualQueue.clean(retentionMs, 100, 'completed'),
+      this.manualQueue.clean(retentionMs, 100, 'failed')
+    ]);
+    await this.refreshQueueDepth();
+  }
+
+  async close(): Promise<void> {
+    await this.scheduler?.close();
+    await this.manualQueue.close();
+    await this.deadLetterQueue.close();
+    await this.redis.quit();
+  }
+
+  private async refreshQueueDepth(): Promise<void> {
+    const counts = await this.manualQueue.getJobCounts('waiting', 'delayed', 'active');
+    const depth = counts.waiting + counts.delayed + counts.active;
+    updateScanQueueDepth(depth);
+  }
+
+  private mapState(state: string): ScanJobResponse['status'] {
+    switch (state) {
+      case 'waiting':
+      case 'delayed':
+        return 'queued';
+      case 'active':
+        return 'processing';
+      case 'completed':
+        return 'completed';
+      case 'failed':
+      default:
+        return 'failed';
+    }
+  }
+
+  private serializeJob(job: Job<ScanJobPayload>) {
+    return {
+      id: job.id,
+      data: job.data,
+      status: job.name,
+      state: job.returnvalue,
+      queuedAt: new Date(job.timestamp ?? Date.now()).toISOString(),
+      completedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : undefined,
+      failedReason: job.failedReason
     };
   }
 }

@@ -13,8 +13,7 @@ import { PairService } from './services/pairService.js';
 import { StatsService } from './services/statsService.js';
 import { SettingsService } from './services/settingsService.js';
 import { ScanQueueService } from './services/scanQueueService.js';
-import { GateIoAdapter } from './services/markets/gateAdapter.js';
-import { KyberAdapter } from './services/markets/kyberAdapter.js';
+import { GateIoAdapter, KyberAdapter } from '@shared/market-adapters';
 
 // Import controllers
 import { OpportunityController } from './controllers/opportunityController.js';
@@ -112,6 +111,7 @@ export async function createApp(): Promise<express.Application> {
   const statsService = new StatsService(serviceDependencies);
   const settingsService = new SettingsService(serviceDependencies);
   const scanQueueService = new ScanQueueService(serviceDependencies);
+  await scanQueueService.initialize();
 
   // Initialize controllers
   const opportunityController = new OpportunityController(opportunityService);
@@ -187,6 +187,7 @@ export async function createApp(): Promise<express.Application> {
     try {
       await gateAdapter.disconnect();
       await kyberAdapter.disconnect();
+      await scanQueueService.close();
       await prisma.$disconnect();
       logger.info('Application cleanup completed');
     } catch (error) {
@@ -196,7 +197,9 @@ export async function createApp(): Promise<express.Application> {
 
   // Periodic cleanup for scan queue
   const cleanupInterval = setInterval(() => {
-    scanQueueService.cleanupOldJobs();
+    scanQueueService.cleanupOldJobs().catch(error => {
+      logger.warn('Failed to cleanup old scan jobs', { error });
+    });
   }, 60 * 60 * 1000); // Every hour
 
   // Clear interval on process exit

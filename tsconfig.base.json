@@ -15,7 +15,9 @@
     "outDir": "./dist",
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["packages/shared/src/*"]
+      "@shared/*": ["packages/shared/src/*"],
+      "@shared/market-adapters": ["packages/market-adapters/src/index.ts"],
+      "@shared/market-adapters/*": ["packages/market-adapters/src/*"]
     }
   },
   "include": ["src", "packages"],
