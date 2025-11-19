@@ -1,4 +1,5 @@
-import { Decimal } from '@prisma/client';
+import type { ScanJobRequest, ScanJobResponse } from '@shared/typings/queues';
+import type { MarketAdapter } from '@shared/market-adapters';
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -90,17 +91,7 @@ export interface SerializedSettings {
   updatedAt: string;
 }
 
-export interface ScanJobRequest {
-  pairId?: number;
-  force?: boolean;
-}
-
-export interface ScanJobResponse {
-  jobId: string;
-  status: 'queued' | 'processing' | 'completed' | 'failed';
-  estimatedDuration?: number;
-  queuedAt: string;
-}
+export type { ScanJobRequest, ScanJobResponse };
 
 export interface HealthStatus {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -116,14 +107,7 @@ export interface HealthStatus {
   };
 }
 
-export interface MarketAdapter {
-  name: string;
-  isConnected(): boolean;
-  connect(): Promise<void>;
-  disconnect(): Promise<void>;
-  getPrice(pair: string): Promise<Decimal>;
-  getVolume(pair: string): Promise<Decimal>;
-}
+export type { MarketAdapter };
 
 export interface ServiceDependencies {
   prisma: any;

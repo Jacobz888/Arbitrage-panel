@@ -1,7 +1,7 @@
 {
-  "name": "@shared/typings",
+  "name": "@shared/market-adapters",
   "version": "1.0.0",
-  "description": "Shared typings, DTOs, and utilities",
+  "description": "Shared market adapters for Gate.io and KyberSwap with rate limiting",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -10,21 +10,9 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
-    "./enums": {
-      "import": "./dist/enums.js",
-      "types": "./dist/enums.d.ts"
-    },
-    "./dtos": {
-      "import": "./dist/dtos.js",
-      "types": "./dist/dtos.d.ts"
-    },
-    "./decimal": {
-      "import": "./dist/decimal.js",
-      "types": "./dist/decimal.d.ts"
-    },
-    "./queues": {
-      "import": "./dist/queues.js",
-      "types": "./dist/queues.d.ts"
+    "./base": {
+      "import": "./dist/baseAdapter.js",
+      "types": "./dist/baseAdapter.d.ts"
     }
   },
   "scripts": {
@@ -34,12 +22,15 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "decimal.js": "^10.4.3"
+    "axios": "^1.6.8",
+    "bottleneck": "^2.19.5",
+    "decimal.js": "^10.4.3",
+    "ethers": "^6.11.1"
   },
   "devDependencies": {
+    "@types/node": "^20.10.5",
     "@typescript-eslint/eslint-plugin": "^6.13.2",
     "@typescript-eslint/parser": "^6.13.2",
-    "decimal.js": "^10.4.3",
     "eslint": "^8.55.0",
     "typescript": "^5.3.3"
   }
