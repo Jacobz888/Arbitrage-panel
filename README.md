@@ -357,6 +357,72 @@ pnpm test               # Test all packages
 pnpm clean              # Clean all packages
 ```
 
+## Testing
+
+This project includes a comprehensive testing suite with unit tests, integration tests, and E2E tests.
+
+### Quick Test Commands
+
+```bash
+# Run all tests
+pnpm test
+
+# Run unit tests only
+pnpm test:unit
+
+# Run integration tests
+pnpm test:integration
+
+# Run E2E tests (requires services to be running)
+pnpm test:e2e
+
+# Run with coverage
+pnpm test:coverage
+```
+
+### Test Structure
+
+- **Unit Tests**: Backend, frontend, worker, and shared package utilities
+  - Vitest for all unit tests
+  - Mocked dependencies
+  - Fast execution (<1s per package)
+
+- **Integration Tests**: Backend HTTP endpoints with Supertest
+  - POST /api/scan with mocked adapters
+  - Validates 202 responses, job creation, error handling
+  - Requires Redis
+
+- **Worker Tests**: Background job logic with dependency injection
+  - TTL closing logic
+  - Rate-limit handling
+  - Opportunity detection
+  - Fully mocked
+
+- **E2E Tests**: Full application flow with Playwright
+  - Dashboard rendering
+  - Manual scan button
+  - Error handling
+  - Pagination
+  - Accessibility
+  - Requires services running
+
+### Running Tests Locally
+
+```bash
+# Unit tests (no dependencies required)
+pnpm test:unit
+
+# Integration tests (requires Redis)
+docker run -d -p 6379:6379 redis:7-alpine
+pnpm test:integration
+
+# E2E tests (requires all services)
+docker-compose up -d
+pnpm test:e2e
+```
+
+For detailed testing documentation, see [TESTING.md](./TESTING.md).
+
 ## Environment Variables
 
 See `backend/.env.example` for a complete list of required environment variables:

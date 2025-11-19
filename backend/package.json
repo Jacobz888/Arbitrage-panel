@@ -8,7 +8,11 @@
     "build": "tsc",
     "dev": "node --watch dist/server.js",
     "lint": "eslint src",
-    "test": "NODE_OPTIONS='--experimental-vm-modules' jest",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:watch": "vitest watch",
+    "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist *.tsbuildinfo",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
@@ -40,16 +44,15 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.5",
-    "@types/jest": "^30.0.0",
     "@types/node": "^20.10.5",
     "@types/supertest": "^6.0.3",
     "@typescript-eslint/eslint-plugin": "^6.13.2",
     "@typescript-eslint/parser": "^6.13.2",
+    "@vitest/coverage-v8": "^1.2.2",
     "eslint": "^8.55.0",
-    "jest": "^30.2.0",
     "supertest": "^7.1.4",
-    "ts-jest": "^29.4.5",
     "tsx": "^4.20.6",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.2"
   }
 }

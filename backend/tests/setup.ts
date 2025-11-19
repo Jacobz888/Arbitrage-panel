@@ -1,87 +1,128 @@
-// Test setup file
+// Vitest setup file
+import { vi, beforeEach } from 'vitest';
 import { PrismaClient } from '@prisma/client';
-
-// Mock Prisma Client for testing
-jest.mock('@prisma/client', () => ({
-  PrismaClient: jest.fn().mockImplementation(() => ({
-    $connect: jest.fn().mockResolvedValue(undefined),
-    $disconnect: jest.fn().mockResolvedValue(undefined),
-    pair: {
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-      count: jest.fn(),
-      aggregate: jest.fn(),
-    },
-    opportunity: {
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-      count: jest.fn(),
-      aggregate: jest.fn(),
-    },
-    scanStats: {
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-      aggregate: jest.fn(),
-    },
-    settings: {
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-    },
-    $queryRaw: jest.fn(),
-  })),
-  Decimal: jest.fn().mockImplementation((value: string | number) => ({
-    toString: () => String(value),
-    toNumber: () => Number(value),
-    equals: jest.fn().mockReturnValue(false),
-    minus: jest.fn().mockReturnThis(),
-    plus: jest.fn().mockReturnThis(),
-    times: jest.fn().mockReturnThis(),
-    div: jest.fn().mockReturnThis(),
-    gt: jest.fn().mockReturnValue(false),
-    gte: jest.fn().mockReturnValue(false),
-    lt: jest.fn().mockReturnValue(false),
-    lte: jest.fn().mockReturnValue(false),
-  })),
-}));
 
 // Set test environment variables
 process.env.NODE_ENV = 'test';
 process.env.LOG_LEVEL = 'error';
 process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test_db';
+process.env.REDIS_URL = 'redis://localhost:6379';
+
+// Mock Prisma Client for unit tests
+vi.mock('@prisma/client', () => ({
+  PrismaClient: vi.fn().mockImplementation(() => ({
+    $connect: vi.fn().mockResolvedValue(undefined),
+    $disconnect: vi.fn().mockResolvedValue(undefined),
+    pair: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      count: vi.fn(),
+      aggregate: vi.fn(),
+    },
+    opportunity: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      count: vi.fn(),
+      aggregate: vi.fn(),
+    },
+    scanStats: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      aggregate: vi.fn(),
+    },
+    settings: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    $queryRaw: vi.fn(),
+  })),
+  Decimal: class MockDecimal {
+    private value: number;
+    
+    constructor(value: string | number) {
+      this.value = Number(value);
+    }
+    
+    toString() {
+      return String(this.value);
+    }
+    
+    toNumber() {
+      return this.value;
+    }
+    
+    toFixed(decimals: number) {
+      return this.value.toFixed(decimals);
+    }
+    
+    equals(other: any) {
+      return this.value === Number(other);
+    }
+    
+    minus(other: any) {
+      return new MockDecimal(this.value - Number(other));
+    }
+    
+    plus(other: any) {
+      return new MockDecimal(this.value + Number(other));
+    }
+    
+    times(other: any) {
+      return new MockDecimal(this.value * Number(other));
+    }
+    
+    div(other: any) {
+      return new MockDecimal(this.value / Number(other));
+    }
+    
+    gt(other: any) {
+      return this.value > Number(other);
+    }
+    
+    gte(other: any) {
+      return this.value >= Number(other);
+    }
+    
+    lt(other: any) {
+      return this.value < Number(other);
+    }
+    
+    lte(other: any) {
+      return this.value <= Number(other);
+    }
+  },
+}));
 
 // Mock logger
-jest.mock('../src/middleware/logger', () => ({
+vi.mock('../src/middleware/logger.js', () => ({
   logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   },
 }));
 
 // Mock metrics
-jest.mock('../src/middleware/metrics', () => ({
+vi.mock('../src/middleware/metrics.js', () => ({
   register: {
     contentType: 'text/plain; version=0.0.4; charset=utf-8',
-    metrics: jest.fn().mockResolvedValue('# HELP test_metric Test metric\n'),
+    metrics: vi.fn().mockResolvedValue('# HELP test_metric Test metric\n'),
   },
-  recordDatabaseMetric: jest.fn(),
-  updateScanQueueDepth: jest.fn(),
-  incrementScanQueue: jest.fn(),
-  decrementScanQueue: jest.fn(),
+  recordDatabaseMetric: vi.fn(),
+  updateScanQueueDepth: vi.fn(),
+  incrementScanQueue: vi.fn(),
+  decrementScanQueue: vi.fn(),
 }));
-
-// Global test timeout
-jest.setTimeout(10000);

@@ -10,7 +10,9 @@
     "dev": "tsx watch src/index.ts",
     "lint": "eslint src",
     "test": "vitest run",
+    "test:unit": "vitest run",
     "test:watch": "vitest watch",
+    "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
@@ -27,6 +29,7 @@
     "@types/node": "^20.10.5",
     "@typescript-eslint/eslint-plugin": "^6.13.2",
     "@typescript-eslint/parser": "^6.13.2",
+    "@vitest/coverage-v8": "^1.2.2",
     "eslint": "^8.55.0",
     "tsx": "^4.20.6",
     "typescript": "^5.3.3",

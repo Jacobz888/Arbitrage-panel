@@ -1,24 +1,22 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import { PairController } from '../../src/controllers/pairController.js';
 import { PairService } from '../../src/services/pairService.js';
 
-// Mock the PairService
-jest.mock('../../src/services/pairService.js');
-
 describe('PairController', () => {
   let app: express.Application;
   let pairController: PairController;
-  let mockPairService: jest.Mocked<PairService>;
+  let mockPairService: any;
 
   beforeEach(() => {
     mockPairService = {
-      getTopPairs: jest.fn(),
-      getPairById: jest.fn(),
-      getPairBySymbol: jest.fn(),
-      getAllPairs: jest.fn(),
-      createPair: jest.fn(),
-      updatePairStatus: jest.fn(),
+      getTopPairs: vi.fn(),
+      getPairById: vi.fn(),
+      getPairBySymbol: vi.fn(),
+      getAllPairs: vi.fn(),
+      createPair: vi.fn(),
+      updatePairStatus: vi.fn(),
     } as any;
 
     pairController = new PairController(mockPairService);

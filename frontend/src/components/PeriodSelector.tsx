@@ -17,7 +17,7 @@ export const PeriodSelector: React.FC<PeriodSelectorProps> = ({ value, onChange,
   ];
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3" data-testid="period-selector">
       <fieldset className="flex gap-3 flex-wrap">
         <legend className="text-sm font-semibold text-slate-300 mb-2">Period</legend>
         {periods.map((period) => (

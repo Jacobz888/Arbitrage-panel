@@ -1,40 +1,37 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PairService } from '../../src/services/pairService.js';
 import { PrismaClient } from '@prisma/client';
 import { Decimal } from '@prisma/client';
 
-// Mock the Decimal class
-jest.mock('@prisma/client', () => ({
-  ...jest.requireActual('@prisma/client'),
-  Decimal: jest.fn().mockImplementation((value: string | number) => ({
-    toString: () => String(value),
-    toNumber: () => Number(value),
-    equals: jest.fn().mockReturnValue(false),
-    minus: jest.fn().mockReturnThis(),
-    plus: jest.fn().mockReturnThis(),
-    times: jest.fn().mockReturnThis(),
-    div: jest.fn().mockReturnThis(),
-  })),
-}));
-
 describe('PairService', () => {
   let pairService: PairService;
-  let mockPrisma: jest.Mocked<PrismaClient>;
+  let mockPrisma: any;
   let mockLogger: any;
 
   beforeEach(() => {
     mockLogger = {
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-      debug: jest.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
     };
 
-    mockPrisma = new PrismaClient() as jest.Mocked<PrismaClient>;
+    mockPrisma = {
+      pair: {
+        findMany: vi.fn(),
+        findUnique: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+        count: vi.fn(),
+        aggregate: vi.fn(),
+      },
+    };
     
     pairService = new PairService({
       prisma: mockPrisma,
       logger: mockLogger,
-      metrics: { record: jest.fn() },
+      metrics: { record: vi.fn() },
     });
   });
 
@@ -69,7 +66,7 @@ describe('PairService', () => {
         },
       ];
 
-      mockPrisma.pair.findMany = jest.fn().mockResolvedValue(mockPairs);
+      mockPrisma.pair.findMany = vi.fn().mockResolvedValue(mockPairs);
 
       const result = await pairService.getTopPairs(10);
 
@@ -119,7 +116,7 @@ describe('PairService', () => {
     });
 
     it('should limit results to maximum 50 pairs', async () => {
-      mockPrisma.pair.findMany = jest.fn().mockResolvedValue([]);
+      mockPrisma.pair.findMany = vi.fn().mockResolvedValue([]);
 
       await pairService.getTopPairs(100);
 
@@ -147,7 +144,7 @@ describe('PairService', () => {
         },
       };
 
-      mockPrisma.pair.findUnique = jest.fn().mockResolvedValue(mockPair);
+      mockPrisma.pair.findUnique = vi.fn().mockResolvedValue(mockPair);
 
       const result = await pairService.getPairById(1);
 
@@ -176,7 +173,7 @@ describe('PairService', () => {
     });
 
     it('should return null when pair not found', async () => {
-      mockPrisma.pair.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.pair.findUnique = vi.fn().mockResolvedValue(null);
 
       const result = await pairService.getPairById(999);
 
@@ -206,7 +203,7 @@ describe('PairService', () => {
         },
       };
 
-      mockPrisma.pair.create = jest.fn().mockResolvedValue(mockCreatedPair);
+      mockPrisma.pair.create = vi.fn().mockResolvedValue(mockCreatedPair);
 
       const result = await pairService.createPair(pairData);
 
@@ -263,7 +260,7 @@ describe('PairService', () => {
         },
       };
 
-      mockPrisma.pair.update = jest.fn().mockResolvedValue(mockUpdatedPair);
+      mockPrisma.pair.update = vi.fn().mockResolvedValue(mockUpdatedPair);
 
       const result = await pairService.updatePairStatus(1, false);
 
