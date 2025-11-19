@@ -2,10 +2,36 @@
 
 A monorepo project for crypto arbitrage trading featuring backend API, frontend dashboard, and worker services.
 
+## Quick Start with Docker 🐳
+
+The fastest way to get started is using Docker Compose:
+
+```bash
+# Start all services (backend, frontend, worker, postgres, redis, prometheus)
+docker-compose up --build
+```
+
+This single command:
+- Builds all services
+- Starts the entire stack
+- Runs database migrations
+- **Automatically seeds sample data**
+- Makes everything accessible at:
+  - **Frontend Dashboard**: http://localhost:3000
+  - **Backend API**: http://localhost:4000
+  - **Prometheus Metrics**: http://localhost:9090
+
+For detailed Docker instructions, see [DOCKER.md](./DOCKER.md).
+
 ## Prerequisites
 
 Before you begin, ensure you have the following installed:
 
+**Option A: Docker (Recommended)**
+- **Docker Engine** (20.10+)
+- **Docker Compose** (2.0+)
+
+**Option B: Local Development**
 - **Node.js** (v20.10.0) - Use the version specified in `.nvmrc`
 - **pnpm** (v8.15.0) - Package manager
 - **PostgreSQL** (v14+) - Database server
@@ -244,7 +270,7 @@ curl http://localhost:3000/api/pairs
 ├── backend/              # Backend API service
 │   ├── prisma/
 │   │   ├── schema.prisma # Database schema definition
-│   │   ├── seed.ts       # Database seeding script
+│   │   ├── seed.mjs      # Database seeding script
 │   │   └── migrations/   # Database migrations
 │   ├── src/
 │   │   └── server.ts     # Express server setup
@@ -254,6 +280,12 @@ curl http://localhost:3000/api/pairs
 ├── worker/               # Background worker services
 ├── packages/
 │   └── shared/           # Shared types and utilities
+├── docker-compose.yml    # Container orchestration stack
+├── prometheus.yml        # Prometheus scrape configuration
+├── DOCKER.md             # Detailed Docker deployment guide
+├── .env.docker.example   # Recommended Docker env vars
+├── scripts/
+│   └── seed-docker.sh    # Helper to seed via API
 └── pnpm-workspace.yaml
 ```
 
@@ -335,6 +367,8 @@ See `backend/.env.example` for a complete list of required environment variables
 - `KYBER_RPC_URL` - KyberSwap RPC endpoint
 - `SENTRY_DSN` - Sentry error tracking
 - `PROM_PORT` - Prometheus metrics port
+- `ALLOW_DOCKER_SEED` - Allow `/api/seed` endpoint even when `NODE_ENV=production`
+- `SEED_DB_ON_START` - Run Prisma seed script automatically during container startup
 - `NODE_ENV` - Environment (development/production)
 - `PORT` - Server port (default: 3000)
 

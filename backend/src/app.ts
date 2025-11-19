@@ -136,10 +136,11 @@ export async function createApp(): Promise<express.Application> {
 
   // Dev-only seed endpoint
   app.get('/api/seed', seedRateLimit, async (req, res) => {
-    if (process.env.NODE_ENV === 'production') {
+    const allowSeedInProduction = process.env.ALLOW_DOCKER_SEED === 'true';
+    if (process.env.NODE_ENV === 'production' && !allowSeedInProduction) {
       return res.status(403).json({
         success: false,
-        error: 'Seed endpoint is not available in production'
+        error: 'Seed endpoint is disabled in production'
       });
     }
 
@@ -149,7 +150,7 @@ export async function createApp(): Promise<express.Application> {
       const execAsync = promisify(exec);
 
       logger.info('Running database seed...');
-      const { stdout, stderr } = await execAsync('npx pnpm db:seed', {
+      const { stdout, stderr } = await execAsync('node prisma/seed.mjs', {
         cwd: process.cwd(),
       });
 

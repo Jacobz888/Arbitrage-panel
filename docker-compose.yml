@@ -1,0 +1,208 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: arbitrage-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: arbitrage_db
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+    networks:
+      - arbitrage-network
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: arbitrage-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    ports:
+      - '6379:6379'
+    networks:
+      - arbitrage-network
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # Backend API Service
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: arbitrage-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/arbitrage_db?schema=public
+      REDIS_URL: redis://redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      
+      # External API Keys (optional - uses mock data if not provided)
+      GATE_API_KEY: ${GATE_API_KEY:-}
+      GATE_API_SECRET: ${GATE_API_SECRET:-}
+      KYBER_RPC_URL: ${KYBER_RPC_URL:-}
+      
+      # Use mock markets by default
+      USE_MOCK_MARKETS: ${USE_MOCK_MARKETS:-true}
+      
+      # Error tracking (optional)
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      
+      # Trading configuration
+      MIN_SPREAD_THRESHOLD: ${MIN_SPREAD_THRESHOLD:-1.5}
+      MAX_INVESTMENT: ${MAX_INVESTMENT:-10000}
+      SCAN_INTERVAL: ${SCAN_INTERVAL:-60}
+      
+      # CORS
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      
+      # Allow seed endpoint in Docker
+      ALLOW_DOCKER_SEED: ${ALLOW_DOCKER_SEED:-true}
+    ports:
+      - '4000:4000'
+    networks:
+      - arbitrage-network
+    healthcheck:
+      test: ['CMD-SHELL', 'wget --quiet --tries=1 --spider http://localhost:4000/health || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Worker Service
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    container_name: arbitrage-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/arbitrage_db?schema=public
+      REDIS_URL: redis://redis:6379
+      
+      # External API Keys (optional - uses mock data if not provided)
+      GATE_API_KEY: ${GATE_API_KEY:-}
+      GATE_API_SECRET: ${GATE_API_SECRET:-}
+      KYBER_RPC_URL: ${KYBER_RPC_URL:-}
+      
+      # Use mock markets by default
+      USE_MOCK_MARKETS: ${USE_MOCK_MARKETS:-true}
+      
+      # Worker configuration
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-3}
+      WORKER_JOB_TIMEOUT_MS: ${WORKER_JOB_TIMEOUT_MS:-60000}
+      OPPORTUNITY_TTL_SECONDS: ${OPPORTUNITY_TTL_SECONDS:-300}
+      
+      # Error tracking (optional)
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    networks:
+      - arbitrage-network
+
+  # Frontend Dashboard
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: arbitrage-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:4000/api}
+      VITE_APP_NAME: ${VITE_APP_NAME:-Arbitrage Dashboard}
+      VITE_APP_VERSION: ${VITE_APP_VERSION:-1.0.0}
+    ports:
+      - '3000:3000'
+    networks:
+      - arbitrage-network
+    healthcheck:
+      test: ['CMD-SHELL', 'wget --quiet --tries=1 --spider http://localhost:3000/health || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Prometheus Metrics Exporter
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: arbitrage-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - '9090:9090'
+    networks:
+      - arbitrage-network
+    depends_on:
+      - backend
+    healthcheck:
+      test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:9090/-/healthy']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # One-off seed job (runs after backend is healthy)
+  seed:
+    image: curlimages/curl:8.11.1
+    container_name: arbitrage-seed
+    depends_on:
+      backend:
+        condition: service_healthy
+    entrypoint: [
+      'sh', '-c',
+      "echo 'Seeding database via backend API...' && curl -fsS http://backend:4000/api/seed && echo 'Seed completed.'"
+    ]
+    restart: 'no'
+    networks:
+      - arbitrage-network
+
+volumes:
+  postgres-data:
+    name: arbitrage-postgres-data
+  redis-data:
+    name: arbitrage-redis-data
+  prometheus-data:
+    name: arbitrage-prometheus-data
+
+networks:
+  arbitrage-network:
+    name: arbitrage-network
+    driver: bridge
