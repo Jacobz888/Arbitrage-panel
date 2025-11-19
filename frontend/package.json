@@ -1,27 +1,42 @@
 {
   "name": "frontend",
   "version": "1.0.0",
-  "description": "Frontend application",
+  "description": "Frontend dashboard application",
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "lint": "eslint src",
-    "test": "echo 'No tests yet'",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
     "@shared/typings": "workspace:*",
+    "@tanstack/react-query": "^5.28.0",
+    "decimal.js": "^10.4.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.1.5",
+    "@testing-library/react": "^14.1.2",
+    "@types/node": "^20.10.0",
     "@types/react": "^18.2.37",
     "@types/react-dom": "^18.2.15",
     "@typescript-eslint/eslint-plugin": "^6.13.2",
     "@typescript-eslint/parser": "^6.13.2",
+    "@vitejs/plugin-react": "^4.2.1",
+    "@vitest/ui": "^1.0.4",
+    "autoprefixer": "^10.4.16",
     "eslint": "^8.55.0",
-    "typescript": "^5.3.3"
+    "jsdom": "^23.0.1",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.3.6",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.8",
+    "vitest": "^1.0.4"
   }
 }
