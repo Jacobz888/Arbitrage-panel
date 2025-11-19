@@ -1,0 +1,112 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OpportunityStatus {
+  PENDING
+  ACTIVE
+  EXECUTED
+  FAILED
+  EXPIRED
+}
+
+enum ScanStatus {
+  IDLE
+  SCANNING
+  ERROR
+}
+
+model Pair {
+  id        Int      @id @default(autoincrement())
+  symbol    String   @unique
+  baseAsset String
+  quoteAsset String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  opportunities Opportunity[]
+  scanStats     ScanStats[]
+
+  @@index([symbol])
+  @@index([createdAt])
+  @@index([updatedAt])
+}
+
+model Opportunity {
+  id              Int                @id @default(autoincrement())
+  pairId          Int
+  pair            Pair               @relation(fields: [pairId], references: [id], onDelete: Cascade)
+  
+  buyExchange     String
+  sellExchange    String
+  buyPrice        Decimal            @db.Decimal(20, 10)
+  sellPrice       Decimal            @db.Decimal(20, 10)
+  spread          Decimal            @db.Decimal(10, 6)
+  profitEstimate  Decimal            @db.Decimal(20, 10)
+  volume          Decimal            @db.Decimal(20, 10)
+  
+  status          OpportunityStatus  @default(PENDING)
+  executedAt      DateTime?
+  expiresAt       DateTime?
+  
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([pairId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@index([spread])
+}
+
+model ScanStats {
+  id                 Int        @id @default(autoincrement())
+  pairId             Int?
+  pair               Pair?      @relation(fields: [pairId], references: [id], onDelete: SetNull)
+  
+  totalScans         Int        @default(0)
+  successfulScans    Int        @default(0)
+  failedScans        Int        @default(0)
+  opportunitiesFound Int        @default(0)
+  
+  lastScanAt         DateTime?
+  averageScanTime    Decimal?   @db.Decimal(10, 2)
+  minPrice           Decimal?   @db.Decimal(20, 10)
+  maxPrice           Decimal?   @db.Decimal(20, 10)
+  avgPrice           Decimal?   @db.Decimal(20, 10)
+  
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  @@index([pairId])
+  @@index([lastScanAt])
+  @@index([createdAt])
+  @@index([updatedAt])
+}
+
+model Settings {
+  id                    Int        @id @default(autoincrement())
+  key                   String     @unique
+  value                 String
+  description           String?
+  
+  minSpread             Decimal?   @db.Decimal(10, 6)
+  maxInvestment         Decimal?   @db.Decimal(20, 10)
+  scanInterval          Int?       // in seconds
+  
+  isActive              Boolean    @default(true)
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+
+  @@index([key])
+  @@index([isActive])
+}
