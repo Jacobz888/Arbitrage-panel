@@ -746,7 +746,3 @@ See `.github/workflows/ci.yml` for the full CI pipeline definition.
 4. Update documentation if adding features or changing APIs
 5. Submit a pull request to `develop` branch
 6. Address any CI failures or code review feedback
-
-## License
-
-[Your License Here]
